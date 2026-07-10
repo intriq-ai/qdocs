@@ -25,8 +25,10 @@ from rich.table import Table
 from qdocs.config import QdocsSettings
 from qdocs.converters import (
     check_mmdc,
+    convert_csv_to_xlsx,
     convert_docx_to_md,
     convert_docx_to_pdf,
+    convert_md_tables_to_xlsx,
     convert_md_to_docx,
     convert_md_to_pdf,
     convert_md_to_xlsx,
@@ -38,6 +40,9 @@ from qdocs.converters import (
     generate_diagrams,
     generate_diagrams_cached,
     get_file_hash,
+    validate_csv,
+    validate_md_tables,
+    validate_xlsx,
 )
 from qdocs.converters.md_to_xlsx import XlsxFormatConfig
 from qdocs.exceptions import (
@@ -318,7 +323,11 @@ class ToDocx(Command):
                         else revision_mgr.record(f, file_hash).revision
                     )
                     file_version = self.version or _read_version_from_md(f)
-                    file_cover = cover.model_copy(update={"version_str": file_version}) if file_version != resolved_version else cover
+                    file_cover = (
+                        cover.model_copy(update={"version_str": file_version})
+                        if file_version != resolved_version
+                        else cover
+                    )
                     convert_md_to_docx(
                         f,
                         out_file,
@@ -528,6 +537,82 @@ class ToXlsx(Command):
             console.print(f"[green]✓[/green] {self.source.name} → {out_file} (r{rev})")
 
 
+class CsvToXlsx(Command):
+    """Convert CSV file(s) to XLSX workbook(s)."""
+
+    source: Path = arg(help="Source .csv file or directory")
+    target: Path | None = arg(default=None, help="Output .xlsx file or directory")
+    pattern: str = arg(default="*.csv", help="Glob pattern for batch mode")
+    recursive: bool = arg(default=True, help="Recurse into subdirectories")
+    delimiter: str | None = arg(
+        default=None,
+        help="CSV delimiter override (default: auto-detect)",
+    )
+    no_header: bool = arg(default=False, help="Treat first row as data (no header styling)")
+
+    @override
+    async def run(self) -> None:
+        if self.source.is_dir():
+            files = (
+                list(self.source.rglob(self.pattern))
+                if self.recursive
+                else list(self.source.glob(self.pattern))
+            )
+            out_dir = self.target or (self.source.parent / f"{self.source.name}-xlsx")
+            out_dir.mkdir(parents=True, exist_ok=True)
+            console.print(f"[cyan]Converting {len(files)} CSV file(s) to XLSX...[/cyan]")
+            ok = 0
+            for src in sorted(files):
+                rel = src.relative_to(self.source)
+                out_file = out_dir / rel.with_suffix(".xlsx")
+                out_file.parent.mkdir(parents=True, exist_ok=True)
+                try:
+                    convert_csv_to_xlsx(
+                        src,
+                        out_file,
+                        delimiter=self.delimiter,
+                        has_header=not self.no_header,
+                    )
+                    ok += 1
+                    console.print(f"  [green]✓[/green] {rel}")
+                except Exception as exc:
+                    console.print(f"  [red]✗[/red] {rel}: {exc}")
+            console.print(f"[green]Done: {ok}/{len(files)}[/green]")
+            return
+
+        out_file = self.target or self.source.with_suffix(".xlsx")
+        out_file.parent.mkdir(parents=True, exist_ok=True)
+        convert_csv_to_xlsx(
+            self.source,
+            out_file,
+            delimiter=self.delimiter,
+            has_header=not self.no_header,
+        )
+        console.print(f"[green]✓[/green] {self.source.name} → {out_file}")
+
+
+class MdTableToXlsx(Command):
+    """Extract markdown tables and convert to XLSX workbook."""
+
+    source: Path = arg(help="Source .md file")
+    target: Path | None = arg(default=None, help="Output .xlsx file")
+    single_sheet: bool = arg(
+        default=False,
+        help="Place all extracted tables in a single worksheet",
+    )
+
+    @override
+    async def run(self) -> None:
+        out_file = self.target or self.source.with_suffix(".tables.xlsx")
+        out_file.parent.mkdir(parents=True, exist_ok=True)
+        convert_md_tables_to_xlsx(
+            self.source,
+            out_file,
+            one_table_per_sheet=not self.single_sheet,
+        )
+        console.print(f"[green]✓[/green] {self.source.name} → {out_file}")
+
+
 class ToMd(Command):
     """Convert DOCX / PDF / XLSX / PPTX to Markdown.
 
@@ -553,7 +638,10 @@ class ToMd(Command):
     )
     textract_region: str = arg(
         default="eu-west-1",
-        help="AWS region for Textract (only used when provider is 'textract' or 'auto' with a valid MFA session)",
+        help=(
+            "AWS region for Textract (only used when provider is 'textract' "
+            "or 'auto' with a valid MFA session)"
+        ),
     )
     no_ai_format: bool = arg(
         default=False,
@@ -565,7 +653,11 @@ class ToMd(Command):
     )
     extract_figures: bool = arg(
         default=False,
-        help="Detect and save figure regions as PNG files in a figures/ sub-directory and insert image references in the Markdown output (Textract provider only)",
+        help=(
+            "Detect and save figure regions as PNG files in a figures/ "
+            "sub-directory and insert image references in the Markdown output "
+            "(Textract provider only)"
+        ),
     )
     no_cache: bool = arg(
         default=False,
@@ -573,7 +665,11 @@ class ToMd(Command):
     )
     pages: str | None = arg(
         default=None,
-        help="Pages to convert, e.g. '1-3,7,10-12' (1-based, comma-separated ranges). Default: all pages. Textract and pdfplumber providers both support this.",
+        help=(
+            "Pages to convert, e.g. '1-3,7,10-12' (1-based, comma-separated "
+            "ranges). Default: all pages. Textract and pdfplumber providers both "
+            "support this."
+        ),
     )
 
     @override
@@ -781,11 +877,78 @@ class ToMd(Command):
 class Convert(Command):
     """Convert documents between formats."""
 
-    subcommand: ToPdf | ToDocx | ToXlsx | ToMd = arg(help="Target format")
+    subcommand: ToPdf | ToDocx | ToXlsx | CsvToXlsx | MdTableToXlsx | ToMd = arg(
+        help="Target format"
+    )
 
     @override
     async def run(self) -> None:
         pass
+
+
+class Validate(Command):
+    """Pre-flight syntax validation for CSV, Markdown tables, and XLSX."""
+
+    source: Path = arg(help="Source file to validate")
+    format: str = arg(
+        default="auto",
+        help="Validation format: auto | csv | md | xlsx",
+    )
+
+    @override
+    async def run(self) -> None:
+        fmt = self.format.lower()
+        if fmt == "auto":
+            suffix = self.source.suffix.lower()
+            if suffix == ".csv":
+                fmt = "csv"
+            elif suffix == ".md":
+                fmt = "md"
+            elif suffix == ".xlsx":
+                fmt = "xlsx"
+            else:
+                console.print(f"[red]Unsupported source format for auto-detect: {suffix}[/red]")
+                sys.exit(1)
+
+        if fmt == "csv":
+            result = validate_csv(self.source)
+        elif fmt == "md":
+            result = validate_md_tables(self.source)
+        elif fmt == "xlsx":
+            result = validate_xlsx(self.source)
+        else:
+            console.print(f"[red]Unknown format '{self.format}'. Use: auto | csv | md | xlsx[/red]")
+            sys.exit(1)
+
+        status = "[green]VALID[/green]" if result.is_valid else "[red]INVALID[/red]"
+        console.print(f"{status} [bold]{self.source.name}[/bold] ({result.kind})")
+
+        if result.errors:
+            table = Table(title="Errors", show_header=True, header_style="bold red")
+            table.add_column("#", justify="right")
+            table.add_column("Location")
+            table.add_column("Message")
+            for idx, issue in enumerate(result.errors, start=1):
+                loc = f"L{issue.line}" if issue.line else "-"
+                if issue.column:
+                    loc = f"{loc}:C{issue.column}"
+                table.add_row(str(idx), loc, issue.message)
+            console.print(table)
+
+        if result.warnings:
+            table = Table(title="Warnings", show_header=True, header_style="bold yellow")
+            table.add_column("#", justify="right")
+            table.add_column("Location")
+            table.add_column("Message")
+            for idx, issue in enumerate(result.warnings, start=1):
+                loc = f"L{issue.line}" if issue.line else "-"
+                if issue.column:
+                    loc = f"{loc}:C{issue.column}"
+                table.add_row(str(idx), loc, issue.message)
+            console.print(table)
+
+        if not result.is_valid:
+            sys.exit(1)
 
 
 # ===========================================================================
@@ -1893,7 +2056,7 @@ class Preview(Command):
             t.add_column("#", justify="right", style="dim", min_width=3)
             t.add_column("File", style="dim", max_width=50)
             t.add_column("Size", justify="right")
-            t.add_column("W×H", style="dim")
+            t.add_column("WxH", style="dim")
             t.add_column("Cache", justify="center")
             for pg in pages:
                 fname = out_dir / f"{src.stem}_p{pg.page_no:03d}_dpi{int(quality)}.png"
@@ -1901,7 +2064,7 @@ class Preview(Command):
                     str(pg.page_no),
                     fname.name,
                     f"{pg.size_kb:.0f}KB",
-                    f"{pg.width_px}×{pg.height_px}",
+                    f"{pg.width_px}x{pg.height_px}",
                     "[green]✓[/green]" if pg.cache_hit else "",
                 )
             console.print(t)
@@ -1909,6 +2072,21 @@ class Preview(Command):
                 f"[green]✓[/green]  {src.name}  {len(pages)}pp @ {int(quality)}dpi  "
                 f"{total_kb:.0f}KB{cache_note}  → [dim]{out_dir}/[/dim]"
             )
+
+
+# ===========================================================================
+# qdocs mcp
+# ===========================================================================
+
+
+class Mcp(Command):
+    """Start the qdocs FastMCP server over stdio."""
+
+    @override
+    async def run(self) -> None:
+        from qdocs.mcp.server import mcp
+
+        mcp.run()
 
 
 # ===========================================================================
@@ -1920,7 +2098,16 @@ class Qdocs(Command):
     """qdocs — document conversion, export, and revision management."""
 
     subcommand: (
-        Convert | Diagrams | Export | IsmsExport | Preview | Revisions | Profile | Cache
+        Convert
+        | Validate
+        | Diagrams
+        | Export
+        | IsmsExport
+        | Preview
+        | Mcp
+        | Revisions
+        | Profile
+        | Cache
     ) = arg(help="Command")
 
     @override
@@ -1982,7 +2169,14 @@ def _normalize_convert_positional_args() -> None:
     """
     if len(sys.argv) < 4:
         return
-    if sys.argv[1] != "convert" or sys.argv[2] not in ("to-pdf", "to-docx", "to-md"):
+    if sys.argv[1] != "convert" or sys.argv[2] not in (
+        "to-pdf",
+        "to-docx",
+        "to-xlsx",
+        "to-md",
+        "csv-to-xlsx",
+        "md-table-to-xlsx",
+    ):
         return
     # If --source is already present, nothing to do
     if "--source" in sys.argv:

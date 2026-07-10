@@ -154,7 +154,7 @@ class QDocsDB(LocalDB):
     # ── Revision history ──────────────────────────────────────────────────────
 
     def get_latest_revision(self, source_path: str) -> tuple | None:
-        """Return the latest revision row (id, source_path, revision, content_hash, changed_at, author, note) or None."""
+        """Return the latest revision row, or ``None`` when no revision exists."""
         with self.session() as conn:
             return conn.execute(
                 """

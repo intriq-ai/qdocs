@@ -223,7 +223,7 @@ def _fix_svg_dash_patterns(drawing: Any) -> Any:
 # Canonical mapping from Unicode emoji / symbols → ASCII/Latin-1 equivalents
 # safe for Helvetica (the PDF font used throughout this converter).
 #
-# Helvetica covers Latin-1 (U+0000–U+00FF) plus a handful of common symbols
+# Helvetica covers Latin-1 (U+0000-U+00FF) plus a handful of common symbols
 # from Postscript standard encoding.  Any codepoint outside that set renders
 # as a filled black rectangle ("missing glyph" box).
 #
@@ -244,8 +244,8 @@ EMOJI_REPLACEMENTS: dict[str, str] = {
     "⚠": "!",  # U+26A0  WARNING SIGN (bare, no VS-16)
     "❓": "?",  # U+2753  BLACK QUESTION MARK ORNAMENT
     "❗": "!",  # U+2757  HEAVY EXCLAMATION MARK ORNAMENT
-    "ℹ️": "i",  # U+2139 + U+FE0F  INFORMATION SOURCE
-    "ℹ": "i",  # U+2139  bare
+    "\u2139\ufe0f": "i",  # U+2139 + U+FE0F INFORMATION SOURCE
+    "\u2139": "i",  # U+2139 bare
     # ── Traffic-light / coloured circles / squares ────────────────────────
     "🔴": "●",  # U+1F534  RED CIRCLE
     "🟠": "●",  # U+1F7E0  ORANGE CIRCLE
@@ -1126,7 +1126,7 @@ _IMG_MAX_H = 3.2 * inch  # ≤ 1/3 of A4 usable height (~9.7 in)
 def _render_image(img_path: Path, flowables: list) -> None:
     """Append an image flowable, handling SVG via svglib.
 
-    Diagrams are capped at _IMG_MAX_W × _IMG_MAX_H (≤ 1/3 page height)
+    Diagrams are capped at _IMG_MAX_W x _IMG_MAX_H (at most one-third page height)
     while preserving aspect ratio.
     """
     try:

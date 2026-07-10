@@ -7,6 +7,27 @@ Versioning: [Semantic Versioning](https://semver.org/)
 
 ---
 
+## [Unreleased]
+
+### Added
+- Pre-flight validation command: `qdocs validate --source <file> --format auto|csv|md|xlsx`
+- CSV syntax validator with delimiter detection and row-shape consistency checks
+- Markdown table syntax validator with separator-row and column consistency checks
+- XLSX integrity validator (workbook openability, sheet-level checks)
+- New converter command: `qdocs convert csv-to-xlsx`
+- New converter command: `qdocs convert md-table-to-xlsx`
+- `convert_csv_to_xlsx` converter with type inference (number/currency/date), header styling, freeze pane, and auto-width
+- `convert_md_tables_to_xlsx` converter for extracting standalone markdown tables into one or many sheets
+- Extended `XlsxFormatConfig` with advanced worksheet support:
+	- merged ranges
+	- conditional formatting rules
+	- data validation rules
+
+### Tests
+- Added tests for CSV/Markdown validators
+- Added tests for CSV->XLSX converter output
+- Added tests for Markdown-table->XLSX converter output
+
 ## [0.1.0] — 2026-07-10
 
 ### Added — Initial Release

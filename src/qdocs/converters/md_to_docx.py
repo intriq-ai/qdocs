@@ -832,6 +832,8 @@ def convert_book_to_docx(
     revision: int | None = None,
     book_title: str | None = None,
     chapters: bool = False,
+    page_numbers: bool = True,
+    page_breaks: bool = False,
 ) -> None:
     """Combine multiple markdown files into a single DOCX book."""
     if not sources:
@@ -855,36 +857,31 @@ def convert_book_to_docx(
         # Use the profile's code theme, or fallback to friendly if none is set
         code_theme = cover.profile.code_theme if cover and cover.profile else "friendly"
 
-        if chapters:
-            grouped = _group_by_chapter_docx(sources)
-            for i, (chapter_name, chapter_sources) in enumerate(grouped, 1):
-                if multi_chapter:
-                    _add_chapter_heading(doc, chapter_name, chap_num)
+        grouped = _group_by_chapter_docx(sources) if chapters else [("", sources)]
+        multi_chapter = chapters and len(grouped) > 1
+        document_index = 0
+        for chapter_number, (chapter_name, chapter_sources) in enumerate(grouped, 1):
+            if multi_chapter:
+                _add_chapter_heading(doc, chapter_name, chapter_number)
 
-                for i, source in enumerate(chapter_sources):
-                    if not source.exists():
-                        logger.warning(f"Book source not found, skipping: {source}")
-                        continue
+            for source in chapter_sources:
+                if not source.exists():
+                    logger.warning(f"Book source not found, skipping: {source}")
+                    continue
+                if document_index > 0 and page_breaks:
+                    doc.add_page_break()
 
-                    if i > 0 and page_breaks:
-                        doc.add_page_break()
+                section_title = _clean_title(source.stem)
+                heading = doc.add_heading(section_title, level=2 if multi_chapter else 1)
+                heading.alignment = WD_PARAGRAPH_ALIGNMENT.LEFT
 
-                    section_title = _clean_title(source.stem)
-                    section_level = 2 if multi_chapter else 1
-                    heading = doc.add_heading(section_title, level=section_level)
-                    heading.alignment = WD_PARAGRAPH_ALIGNMENT.LEFT
-
-                    content = source.read_text(encoding="utf-8")
-                    _, body = _parse_metadata_header(content)
-                    lang_map = scan_fenced_langs(body)
-                    code_theme = cover.profile.code_theme if cover and cover.profile else "friendly"
-
-                    # Use fenced_code NOT codehilite — same reason as convert_md_to_docx
-                    html = markdown.markdown(
-                        body, extensions=["extra", "fenced_code", "tables"]
-                    )
-                    soup = BeautifulSoup(html, "html.parser")
-                    _render_soup_to_doc(doc, soup, source.parent, lang_map, code_theme)
+                content = source.read_text(encoding="utf-8")
+                _, body = _parse_metadata_header(content)
+                lang_map = scan_fenced_langs(body)
+                html = markdown.markdown(body, extensions=["extra", "fenced_code", "tables"])
+                soup = BeautifulSoup(html, "html.parser")
+                _render_soup_to_doc(doc, soup, source.parent, lang_map, code_theme)
+                document_index += 1
 
         if page_numbers:
             _add_page_number_footer(doc)

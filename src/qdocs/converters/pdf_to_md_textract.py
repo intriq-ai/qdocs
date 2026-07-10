@@ -407,7 +407,7 @@ def _extract_page_figures(
         total = img_arr.size
         if total > 0 and np.sum(img_arr >= 245) / total >= _BLANK_RATIO:
             logger.debug(
-                "[fig-extract] p{} gap [{:.3f}–{:.3f}] skipped (blank)",
+                "[fig-extract] p{} gap [{:.3f}-{:.3f}] skipped (blank)",
                 page_num + 1,
                 gap_y0,
                 gap_y1,

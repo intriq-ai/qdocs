@@ -12,7 +12,7 @@ Cover sheet
 -----------
 When ``cover`` is enabled (``CoverPageConfig.enabled = True``) the
 first sheet is a branded cover sheet containing:
-  • Company logo (PNG, top-left, 2×0.75 in)
+    • Company logo (PNG, top-left, 2x0.75 in)
   • Document title (H1 heading from the Markdown, large bold cell)
   • Metadata row: Author | Version | Date | Classification
   • An optional chapter label
@@ -58,6 +58,7 @@ if TYPE_CHECKING:
 try:
     import openpyxl
     from openpyxl.drawing.image import Image as XlImage
+    from openpyxl.formatting.rule import CellIsRule, ColorScaleRule, DataBarRule, FormulaRule
     from openpyxl.styles import (
         Alignment,
         Border,
@@ -66,6 +67,7 @@ try:
         Side,
     )
     from openpyxl.utils import get_column_letter
+    from openpyxl.worksheet.datavalidation import DataValidation
 
     _AVAILABLE = True
 except ImportError:
@@ -136,6 +138,12 @@ class XlsxFormatConfig:
         palette: dict[str, str] | None = None,
         # Tab colour for worksheets (hex, no #) — None = auto
         tab_color: str | None = None,
+        # Advanced worksheet features
+        merged_ranges: list[str] | None = None,
+        named_ranges: dict[str, str] | None = None,
+        conditional_rules: list[dict[str, Any]] | None = None,
+        data_validations: list[dict[str, Any]] | None = None,
+        cell_comments: dict[str, str] | None = None,
     ) -> None:
         self.currency_symbol = currency_symbol
         self.currency_format = currency_format
@@ -154,6 +162,11 @@ class XlsxFormatConfig:
         self.auto_currency = auto_currency
         self.palette = {**_PALETTE, **(palette or {})}
         self.tab_color = tab_color
+        self.merged_ranges = merged_ranges or []
+        self.named_ranges = named_ranges or {}
+        self.conditional_rules = conditional_rules or []
+        self.data_validations = data_validations or []
+        self.cell_comments = cell_comments or {}
 
 
 # ---------------------------------------------------------------------------
@@ -789,6 +802,93 @@ def _render_blocks(
     _apply_col_widths()
 
 
+def _apply_advanced_features(ws: Any, fmt: XlsxFormatConfig) -> None:
+    """Apply optional merged ranges, conditional formatting, and data validation."""
+    for rng in fmt.merged_ranges:
+        ws.merge_cells(rng)
+
+    # Named Ranges (Workbook level)
+    from openpyxl.workbook.defined_name import DefinedName
+    wb = ws.parent
+    for name, range_str in fmt.named_ranges.items():
+        # Scoped to current worksheet by prefixing sheet name if not already present
+        full_ref = range_str if "!" in range_str else f"'{ws.title}'!{range_str}"
+        defn = DefinedName(name, attr_text=full_ref)
+        wb.defined_names.add(defn)
+
+    for rule in fmt.conditional_rules:
+        rule_type = str(rule.get("type", "")).lower()
+        cell_range = rule.get("range")
+        if not cell_range:
+            continue
+
+        if rule_type == "cell_is":
+            ws.conditional_formatting.add(
+                cell_range,
+                CellIsRule(
+                    operator=rule.get("operator", "greaterThan"),
+                    formula=rule.get("formula", ["0"]),
+                    stopIfTrue=bool(rule.get("stop_if_true", False)),
+                    fill=_fill(str(rule.get("fill", "FFF2CC"))),
+                ),
+            )
+        elif rule_type == "color_scale":
+            ws.conditional_formatting.add(
+                cell_range,
+                ColorScaleRule(
+                    start_type=rule.get("start_type", "min"),
+                    start_color=rule.get("start_color", "F8696B"),
+                    mid_type=rule.get("mid_type", "percentile"),
+                    mid_value=rule.get("mid_value", 50),
+                    mid_color=rule.get("mid_color", "FFEB84"),
+                    end_type=rule.get("end_type", "max"),
+                    end_color=rule.get("end_color", "63BE7B"),
+                ),
+            )
+        elif rule_type == "data_bar":
+            ws.conditional_formatting.add(
+                cell_range,
+                DataBarRule(
+                    start_type=rule.get("start_type", "min"),
+                    end_type=rule.get("end_type", "max"),
+                    color=rule.get("color", "638EC6"),
+                ),
+            )
+        elif rule_type == "contains_text":
+            needle = str(rule.get("text", ""))
+            if needle:
+                ws.conditional_formatting.add(
+                    cell_range,
+                    FormulaRule(
+                        formula=[f'NOT(ISERROR(SEARCH("{needle}",A1)))'],
+                        stopIfTrue=bool(rule.get("stop_if_true", False)),
+                        fill=_fill(str(rule.get("fill", "E2F0D9"))),
+                    ),
+                )
+
+    for cfg in fmt.data_validations:
+        cell_range = cfg.get("range")
+        if not cell_range:
+            continue
+        validation = DataValidation(
+            type=cfg.get("type", "list"),
+            operator=cfg.get("operator"),
+            formula1=cfg.get("formula1"),
+            formula2=cfg.get("formula2"),
+            allow_blank=bool(cfg.get("allow_blank", True)),
+            showErrorMessage=True,
+            errorTitle=cfg.get("error_title", "Invalid Value"),
+            error=cfg.get("error", "Value does not satisfy validation rule."),
+        )
+        ws.add_data_validation(validation)
+        validation.add(cell_range)
+
+    # Cell Comments
+    from openpyxl.comments import Comment
+    for cell_ref, text in fmt.cell_comments.items():
+        ws[cell_ref].comment = Comment(text, "qdocs")
+
+
 # ---------------------------------------------------------------------------
 # Public converter
 # ---------------------------------------------------------------------------
@@ -847,6 +947,7 @@ def convert_md_to_xlsx(
                 ws.sheet_properties.tabColor = fmt.tab_color
             title_for_sheet = sheet_name if sheet_title else ""
             _render_blocks(ws, blocks, fmt, sheet_title=title_for_sheet)
+            _apply_advanced_features(ws, fmt)
 
         target.parent.mkdir(parents=True, exist_ok=True)
         wb.save(str(target))

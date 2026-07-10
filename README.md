@@ -14,6 +14,8 @@ graph LR
     PPTX[PPTX] -->|to-md| MD
     DOCX -->|to-pdf| PDF
     PDF -->|to-docx| DOCX
+    CSV[CSV] -->|csv-to-xlsx| XLSX
+    MD -->|md-table-to-xlsx| XLSX
 ```
 
 ---
@@ -24,9 +26,23 @@ graph LR
 - **MD → PDF**: branded cover pages, revision tracking, landscape mode, page numbers
 - **MD → DOCX**: cover pages, syntax highlighting, page breaks, metadata headers
 - **MD → XLSX**: multi-sheet workbooks, currency formatting, locale-aware, auto-fit columns
+- **CSV → XLSX**: direct import with type inference, header styling, and freeze-panes
+- **MD Table → XLSX**: extract standalone GFM tables into multi-sheet workbooks
 - **PDF → MD**: pdfplumber (local) or AWS Textract + Bedrock AI formatting
 - **DOCX/XLSX/PPTX → MD**: office document extraction
 - **DOCX → PDF, PDF → DOCX**: office format interop
+
+### Advanced XLSX Features
+- **Conditional Formatting**: Data bars, color scales, and rule-based cell styling
+- **Data Validation**: Dropdown lists and numeric constraints for cells
+- **Merged Ranges**: Support for multi-cell merged headers and data blocks
+- **Named Ranges**: Register workbook-level named ranges for formulas
+- **Cell Comments**: Persistent notes/annotations on individual cells
+
+### Syntax Validation
+- **CSV**: RFC 4180 compliance, delimiter detection, and shape consistency
+- **MD Tables**: GFM syntax validation and column-count alignment
+- **XLSX**: Integrity checks, sheet title validation, and empty sheet detection
 
 ### Diagrams
 - Extract & render Mermaid blocks from Markdown
@@ -70,6 +86,19 @@ uv sync
 ## Quick Start
 
 ```bash
+# Validate file syntax
+qdocs validate --source data.csv
+qdocs validate --source report.md --format md
+
+# Convert CSV to XLSX
+qdocs convert csv-to-xlsx --source log.csv --target data.xlsx
+
+# Extract tables from MD
+qdocs convert md-table-to-xlsx --source notes.md
+
+# Start MCP server
+qdocs mcp
+
 # Convert a single file
 qdocs convert to-pdf --source report.md
 qdocs convert to-docx --source report.md --classification CONFIDENTIAL
