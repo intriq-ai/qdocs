@@ -1,9 +1,23 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
 [project]
-name = "qdocs"
+name = "intriqai-qdocs"
 version = "0.1.0"
 description = "General-purpose document conversion, export, and revision management"
 readme = "README.md"
+license = { text = "Proprietary" }
 requires-python = ">=3.14"
+authors = [
+    { name = "Intriq AI", email = "engineering@intriq.ai" }
+]
+keywords = ["documents", "pdf", "markdown", "docx", "xlsx", "conversion"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3.14",
+]
 dependencies = [
     "pydantic>=2.7",
     "pydantic-settings>=2.3",
@@ -31,10 +45,6 @@ dependencies = [
 
 [project.scripts]
 qdocs = "qdocs.cli:main"
-
-[build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
 
 [dependency-groups]
 dev = [

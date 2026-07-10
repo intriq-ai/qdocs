@@ -1,0 +1,80 @@
+name: lint · typecheck · publish
+
+on:
+  push:
+    branches: [main]
+
+# Prevent loop: GITHUB_TOKEN pushes don't re-trigger, but guard against PATs
+concurrency:
+  group: publish-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    if: github.actor != 'github-actions[bot]'
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.14"
+
+      # ── Lint ──────────────────────────────────────────────────────────────
+      - name: Ruff auto-fix
+        run: uvx ruff check --fix src/ || true
+
+      - name: Ruff format
+        run: uvx ruff format src/
+
+      - name: Commit lint fixes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add src/
+          git diff --staged --quiet || git commit -m "style: ruff auto-fix"
+
+      # ── Type-check (non-blocking) ─────────────────────────────────────────
+      - name: ty check
+        run: uvx ty check src/ || true
+
+      # ── Version bump ──────────────────────────────────────────────────────
+      - name: Bump patch version
+        id: version
+        run: |
+          python3 -c "
+          import re, pathlib
+          p = pathlib.Path('pyproject.toml')
+          c = p.read_text()
+          m = re.search(r'(?m)^version = \"(\d+)\.(\d+)\.(\d+)\"', c)
+          new = f'{m.group(1)}.{m.group(2)}.{int(m.group(3)) + 1}'
+          p.write_text(c.replace(m.group(0), f'version = \"{new}\"'))
+          "
+          VERSION=$(grep '^version = ' pyproject.toml | tr -d '"' | sed 's/version = //')
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      # ── Build ─────────────────────────────────────────────────────────────
+      - name: Build wheel
+        run: uv build
+
+      # ── Publish to CodeArtifact ───────────────────────────────────────────
+      - name: Publish to CodeArtifact
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: eu-west-1
+        run: |
+          TOKEN=$(aws codeartifact get-authorization-token \
+            --domain intriqai \
+            --query authorizationToken \
+            --output text)
+          uv publish \
+            --publish-url "https://intriqai-441877405077.d.codeartifact.eu-west-1.amazonaws.com/pypi/intriqai-packages/" \
+            --username aws \
+            --password "$TOKEN"
