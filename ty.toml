@@ -1,0 +1,11 @@
+[rules]
+invalid-return-type = "warn"
+missing-argument = "warn"
+call-non-callable = "warn"
+invalid-argument-type = "warn"
+unsupported-operator = "warn"
+no-matching-overload = "warn"
+unused-awaitable = "warn"
+
+# Baseline: everything else silenced until triaged
+all = "ignore"

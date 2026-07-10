@@ -1,0 +1,17 @@
+# ============================================================================
+# Ruff Configuration - qdocs
+# ============================================================================
+# Python 3.14+, async-first, Pydantic v2
+
+target-version = "py314"
+line-length = 120
+
+exclude = [
+    ".venv",
+    "venv",
+    "__pycache__",
+    ".git",
+]
+
+[lint]
+select = ["E", "F", "I", "UP", "RUF"]
