@@ -3,7 +3,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "intriqai-qdocs"
+name = "qdocs"
 version = "0.1.0"
 description = "General-purpose document conversion, export, and revision management"
 readme = "README.md"
