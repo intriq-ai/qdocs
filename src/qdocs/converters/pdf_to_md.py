@@ -129,7 +129,25 @@ def convert_pdf_to_md(
             logger.debug("[pdf→md] auto: pdfplumber selected ({})", mfa_msg)
 
     # ── pdfplumber path ──────────────────────────────────────────────────
-    _convert_via_pdfplumber(source, target, pages=pages)
+    try:
+        _convert_via_pdfplumber(source, target, pages=pages)
+    except ConversionError as exc:
+        if provider == "auto" and "likely scanned/image-only" in str(exc):
+            logger.warning("[pdf→md] pdfplumber failed (image-only PDF). Retrying via Textract as fallback...")
+            _convert_via_textract(
+                source,
+                target,
+                region=textract_region,
+                ai_format=ai_format,
+                ai_model_id=ai_model_id,
+                extract_figures=extract_figures,
+                figures_dir=figures_dir,
+                on_progress=on_progress,
+                cache=cache,
+                pages=pages,
+            )
+        else:
+            raise
 
 
 def _convert_via_textract(
@@ -181,11 +199,14 @@ def _convert_via_pdfplumber(
                 _page_filter: set[int] = _parse_page_spec(pages, total_pages)
             else:
                 _page_filter = set()
+
+            total_characters = 0
             for page_num, page in enumerate(pdf.pages, 1):
                 if _page_filter and page_num not in _page_filter:
                     continue
                 text = page.extract_text()
                 if text:
+                    total_characters += len(text.strip())
                     if total_pages > 1:
                         lines.append(f"\n## Page {page_num}\n")
                     lines.append(f"{text}\n")
@@ -199,6 +220,18 @@ def _convert_via_pdfplumber(
                         f"| {' | '.join(str(c or '') for c in row)} |\n"
                         for row in table[1:]
                     )
+
+            # Pre-flight/post-flight check: If pdfplumber successfully parsed 0 meaningful characters
+            # across all pages, it's highly probable the PDF is scanned or image-only.
+            if total_characters == 0:
+                logger.warning(
+                    "[pdf→md] pdfplumber extracted 0 characters from {}. "
+                    "This PDF is likely scanned/image-only.",
+                    source.name
+                )
+                raise ConversionError(
+                    f"pdfplumber extracted 0 characters from {source.name}. PDF is likely scanned/image-only."
+                )
 
         target.write_text("\n".join(lines), encoding="utf-8")
         logger.debug(f"PDF→MD: {source.name} → {target.name}")
