@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "qdocs"
-version = "0.1.0"
+version = "0.6.1-1"
 description = "General-purpose document conversion, export, and revision management"
 readme = "README.md"
 license = { text = "Proprietary" }
